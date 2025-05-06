@@ -1,8 +1,5 @@
 # README
 
-## Overview
-
-The experiments are conducted on the CIFAR-10 SVHN and ImageNet datasets. Here, we provide the guidline for CIFAR-10.
 
 
 ## Pretrained Weight
