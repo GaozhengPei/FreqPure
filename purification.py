@@ -130,76 +130,76 @@ class PurificationForward(torch.nn.Module):
 
         return pred_xstart,sample
 
-    def compute_fft(self,image):
-        amplitude_channels = []
-        phase_channels = []
-        for channel in range(3):
-            f = np.fft.fft2(image[channel, :, :])
-            fshift = np.fft.fftshift(f)
-            amplitude = np.abs(fshift)
-            phase = np.angle(fshift)
-            amplitude_channels.append(amplitude)
-            phase_channels.append(phase+np.pi)
+    def compute_fft(self,image):  
+        """对彩色图像的每个通道进行傅里叶变换，计算振幅和相位"""  
+        amplitude_channels = []  
+        phase_channels = []  
+
+        for channel in range(3):  
+            # 使用 torch.fft.fft2 进行二维傅里叶变换  
+            f = torch.fft.fft2(image[channel, :, :])  
+            
+            # 使用 torch.fft.fftshift 进行频谱移位  
+            fshift = torch.fft.fftshift(f)  
+            
+            # 计算振幅  
+            amplitude = torch.abs(fshift)  
+            amplitude_channels.append(amplitude)  
+            
+            # 计算相位并加上 π  
+            phase = torch.angle(fshift)  
+            phase_channels.append(phase + torch.pi)  
+
         return amplitude_channels, phase_channels
 
     def low_pass_exchange(self,amplitude_channels, amplitude_channels_0_t):
         filtered_amplitude_channels = []
+        """对振幅进行低通滤波，保留给定频率以下的成分"""
         for i in range(3):
             rows, cols = amplitude_channels[i].shape
-
+            # 计算频率映射
             u = np.arange(-cols // 2, cols // 2)
             v = np.arange(-rows // 2, rows // 2)
             U, V = np.meshgrid(u, v)
             frequency_map = np.sqrt(U ** 2 + V ** 2)
-
             low_frequency = (frequency_map <= self.amplitude_cut_range)
-
+            low_frequency = torch.from_numpy(low_frequency).to(self.device)
+            # 应用低通滤波器
             amplitude_channels_0_t[i][low_frequency] = amplitude_channels[i][low_frequency]
             filtered_amplitude_channels.append(amplitude_channels_0_t[i])
         return filtered_amplitude_channels
 
-
+    # def generate_frequency_exchange_matrix(self,rows, cols):
+    #     matrix = np.zeros((rows, cols), dtype=bool)
+    #     for idx in range(rows*cols):
+    #         row = idx // rows  # 计算行索引
+    #         col = idx % cols   # 计算列索引
+    #         if int(self.ratio * idx) == idx:
+    #             print(idx)
+    #             matrix[row, col] = True
+    #     return matrix
     def phase_low_pass_exchange(self,phase_channels, phase_channels_0_t):
         filtered_amplitude_channels = []
-
+        """对振幅进行低通滤波，保留给定频率以下的成分"""
         for i in range(3):
             rows, cols = phase_channels[i].shape
-
+            # 计算频率映射
             u = np.arange(-cols // 2, cols // 2)
             v = np.arange(-rows // 2, rows // 2)
             U, V = np.meshgrid(u, v)
             frequency_map = np.sqrt(U ** 2 + V ** 2)
-
+            # print(np.max(frequency_map))
+            # 创建低通滤波器
             low_frequency = (frequency_map <= self.phase_cut_range)
-
-
+            low_frequency = torch.from_numpy(low_frequency).to(self.device)
+            # 应用低通滤波器
             phase_channels_0_t[i][low_frequency] = phase_channels[i][low_frequency]
-
-            phase_channels_0_t[i][low_frequency] = np.clip(phase_channels_0_t[i][low_frequency],phase_channels[i][low_frequency]-self.delta,phase_channels[i][low_frequency]+self.delta)
+            ##再低频clip
+            phase_channels_0_t[i][low_frequency] = torch.clip(phase_channels_0_t[i][low_frequency],phase_channels[i][low_frequency]-self.delta,phase_channels[i][low_frequency]+self.delta)
             filtered_amplitude_channels.append(phase_channels_0_t[i])
         return filtered_amplitude_channels
     
 
-    def generate_frequency_exchange_matrix(self,rows, cols):
-        matrix = np.zeros((rows, cols), dtype=bool)
-        frequency = int(1/self.ratio)
-        indices = np.arange(0,rows*cols,frequency)
-        for idx in indices:
-
-            row = idx // rows 
-            col = idx % cols  
-            matrix[row, col] = True
-        return matrix
-
-    def generate_random_exchange_matrix(self,rows, cols):
-        matrix = np.zeros((rows, cols), dtype=bool)
-        exchange_num = int(rows*cols*self.ratio)
-        indices = np.random.choice(1024, size=exchange_num, replace=False)
-        for idx in indices:
-            row = idx // rows  
-            col = idx % cols  
-            matrix[row, col] = True
-        return matrix
     
     def phase_exchange(self,phase_channels,phase_channels_0_t):
         exchanged_phase_channels = []
@@ -215,59 +215,62 @@ class PurificationForward(torch.nn.Module):
         for i in range(3):
             phase_channels_clip.append(np.clip(phase_channels_0_t[i],phase_channels[i]-delta,phase_channels[i]+delta))
         return phase_channels_clip
-
+        # return np.clip(phase_channels,phase_channels_0_t-delta,phase_channels_0_t+delta)
     
     def reconstruct_image(self,filtered_amplitude_channels, phase_channels):
-
+        """使用低通滤波后的振幅和原始相位重建图像"""
         reconstructed_image = []
         for channel in range(3):
             amplitude = filtered_amplitude_channels[channel]
-            phase = phase_channels[channel]-np.pi
+            phase = phase_channels[channel]-torch.pi
 
+            # 使用振幅和相位重建频谱
+            fshift_filtered = amplitude * torch.exp(1j * phase)
 
-            fshift_filtered = amplitude * np.exp(1j * phase)
-
-            f_ishift = np.fft.ifftshift(fshift_filtered)
-            img_reconstructed = np.fft.ifft2(f_ishift)
-            img_reconstructed = np.abs(img_reconstructed)
-
-            img_reconstructed = np.clip(img_reconstructed,0,255)
+            # 进行傅里叶逆变换
+            f_ishift = torch.fft.ifftshift(fshift_filtered)
+            img_reconstructed = torch.fft.ifft2(f_ishift)
+            img_reconstructed = torch.abs(img_reconstructed)
+            # print(img_reconstructed)
+            img_reconstructed = torch.clip(img_reconstructed,0,255)
             reconstructed_image.append(img_reconstructed/255)
 
         # 合并三个通道
-        return cv2.merge(reconstructed_image)
+        return torch.stack(reconstructed_image,dim=2)
 
-    def amplitude_phase_exchange(self,x,x_0_t,t):
+        
 
-        x = (diff2clf(x).cpu().detach().numpy() * 255).astype(np.uint8)
-        x_0_t = (diff2clf(x_0_t).cpu().detach().numpy() * 255).astype(np.uint8)
+    def amplitude_phase_exchange_torch(self,x,x_0_t):
+        ### 先将[-1,1]转换到[0,1]范围再转到0-255 #
+        x = (diff2clf(x)* 255).type(torch.uint8)
+        x_0_t = (diff2clf(x_0_t)* 255).type(torch.uint8)
         batch,channel,height,width = x.shape
-        new_x_0_t = np.zeros(shape=(batch,height,width,channel))
+        new_x_0_t = torch.zeros(size=(batch,height,width,channel))
         for batch_idx in range(batch):
-
+            ### 先计算正常图片的
             amplitude_channels, phase_channels = self.compute_fft(x[batch_idx])
-
-
+            ### 再计算当前时间步预测的
             amplitude_channels_0_t, phase_channels_0_t = self.compute_fft(x_0_t[batch_idx])
 
             amplitude_channels_0_t_exchange = self.low_pass_exchange(amplitude_channels,amplitude_channels_0_t)
-
             phase_channels_0_t_exchange = self.phase_low_pass_exchange(phase_channels,phase_channels_0_t)
 
             reconstructed_image = self.reconstruct_image(amplitude_channels_0_t_exchange,phase_channels_0_t_exchange)
 
             new_x_0_t[batch_idx] = reconstructed_image
-        new_x_0_t = torch.from_numpy(new_x_0_t).to(self.device).float().permute(0,3,1,2)
+        new_x_0_t = new_x_0_t.float().permute(0,3,1,2).to(self.device)
         new_x_0_t = clf2diff(new_x_0_t)
         return new_x_0_t
-        
 
     def denoise(self, x):
 
+
+        ##### 实现参考https://blog.csdn.net/LittleNyima/article/details/139661712
         n = x.shape[0]
         x_t = self.diffuse_t_steps(x,self.timesteps[0])
         for t, tau in list(zip(self.timesteps[:-1], self.timesteps[1:])):
 
+            ## 方差的系数
             if not math.isclose(self.eta, 0.0):
                 one_minus_alpha_prod_tau = 1.0 - self.alphas_cumprod[tau]
                 one_minus_alpha_prod_t = 1.0 - self.alphas_cumprod[t]
@@ -276,6 +279,8 @@ class PurificationForward(torch.nn.Module):
             else:
                 sigma_t = torch.zeros_like(torch.tensor(self.alphas[0]))
                 
+
+            ## DDIM 采样
             pred_noise = self.diffusion(x_t,(torch.ones(n)*t).to(self.device))
             if self.is_imagenet:
                 pred_noise, _ = torch.split(pred_noise, 3, dim=1)
@@ -286,8 +291,10 @@ class PurificationForward(torch.nn.Module):
             sqrt_alphas_cumprod_t = alphas_cumprod_t ** 0.5
             sqrt_one_minus_alphas_cumprod_t = (1.0 - alphas_cumprod_t) ** 0.5
             x_0_t = (x_t - sqrt_one_minus_alphas_cumprod_t * pred_noise) / sqrt_alphas_cumprod_t
+            # print(torch.min(x),torch.max(x))
 
-            x_0_t = self.amplitude_phase_exchange(x,x_0_t,t)
+            ###将此处预测的x_0_t高频滤除掉并且以一定的频率对相位谱进行采样
+            x_0_t = self.amplitude_phase_exchange_torch(x,x_0_t)
 
             first_term = sqrt_alphas_cumprod_tau * x_0_t
 
