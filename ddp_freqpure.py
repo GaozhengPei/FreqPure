@@ -119,9 +119,9 @@ def test(rank, world_size, args):
         clf, diffusion = load_models(args, model_src, device)
 
         # Set diffusion process for attack and defense
-        attack_forward = PurificationForward(clf=clf, diffusion=diffusion, is_imagenet=is_imagenet,max_timestep=att_max_timesteps,attack_steps=att_diffusion_steps,
+        attack_forward = PurificationForward(clf=clf, diffusion=diffusion, is_imagenet=is_imagenet,max_timestep=att_max_timesteps,attack_steps=att_diffusion_steps,forward_noise_steps = args.forward_noise_steps,
                                             amplitude_cut_range=args.amplitude_cut_range,phase_cut_range=args.phase_cut_range,delta=args.delta,device=device,sampling_method=args.att_sampling_method)
-        defense_forward = PurificationForward(clf=clf, diffusion=diffusion, is_imagenet=is_imagenet,max_timestep=def_max_timesteps,attack_steps=def_diffusion_steps,
+        defense_forward = PurificationForward(clf=clf, diffusion=diffusion, is_imagenet=is_imagenet,max_timestep=def_max_timesteps,attack_steps=def_diffusion_steps,forward_noise_steps = args.forward_noise_steps,
                                             amplitude_cut_range=args.amplitude_cut_range,phase_cut_range=args.phase_cut_range,delta=args.delta,device=device,sampling_method=args.def_sampling_method)
 
         # Set adversarial attack

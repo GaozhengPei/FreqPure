@@ -14,7 +14,7 @@ def get_beta_schedule(beta_start, beta_end, num_diffusion_timesteps):
 
 
 class PurificationForward(torch.nn.Module):
-    def __init__(self, clf, diffusion, max_timestep, attack_steps, sampling_method, is_imagenet, device,amplitude_cut_range,phase_cut_range,delta):
+    def __init__(self, clf, diffusion, max_timestep, attack_steps, sampling_method, is_imagenet, device,amplitude_cut_range,phase_cut_range,delta,forward_noise_steps):
         super().__init__()
         self.clf = clf
         self.diffusion = diffusion
@@ -32,7 +32,7 @@ class PurificationForward(torch.nn.Module):
         elif self.sampling_method == 'ddpm':
             self.eta = 1
         self.is_imagenet = is_imagenet
-        self.forward_noise_steps = 20
+        self.forward_noise_steps = forward_noise_steps
 
     def compute_alpha(self, t):
         beta = torch.cat(
