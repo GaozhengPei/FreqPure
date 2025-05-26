@@ -10,7 +10,7 @@ from score_sde import sde_lib
 from guided_diffusion.script_util import create_model_and_diffusion, model_and_diffusion_defaults
 from svhn.diffusion import Model as SVHNDiffusion
 from svhn.resnet import resnet, SVHNClf
-from utils import dict2namespace, restore_checkpoint
+from utils import dict2namespace, restore_checkpoint,load_wideresnet_70_16
 from torchvision.models import ResNet50_Weights
 
 
@@ -28,11 +28,11 @@ def load_models(args, model_src, device):
         restore_checkpoint(model_src, state, device)
         ema.copy_to(diffusion.parameters())
         diffusion.eval().to(device)
-
         # # Underlying classifier
-        clf = load_clf(model_name='Standard',
-                       dataset='cifar10',threat_model='L2').to(device).eval()
+        # clf = load_clf(model_name='Standard',
+        #                dataset='cifar10',threat_model='L2').to(device).eval()
         # clf = None
+        clf = load_wideresnet_70_16().to(device).eval()
     elif args.dataset == 'imagenet':
         with open('./diffusion_configs/imagenet.yml', 'r') as f:
             config = yaml.load(f, Loader=yaml.Loader)

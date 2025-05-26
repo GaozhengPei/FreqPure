@@ -16,7 +16,7 @@ from attacks.aa_eot_linf import AutoAttackLinf
 from attacks.pgd_eot_bpda import BPDA
 from load_data import load_dataset_by_name
 from load_model import load_models
-from purification import PurificationForward
+from purification_v2 import PurificationForward
 from utils import copy_source
 from path import *
 from PIL import Image
@@ -56,7 +56,6 @@ def get_diffusion_params(max_timesteps, num_denoising_steps):
         diffusion_steps.append([i - 1 for i in range(max_timestep_list[i] // num_denoising_steps_list[i],
                                max_timestep_list[i] + 1, max_timestep_list[i] // num_denoising_steps_list[i])])
         max_timestep_list[i] = max_timestep_list[i] - 1
-
     return max_timestep_list, diffusion_steps
 
 
@@ -64,17 +63,16 @@ def predict(x, args, defense_forward, num_classes):
     ensemble = torch.zeros(x.shape[0], num_classes).to(x.device)
     for _ in range(args.num_ensemble_runs):
         _x = x.clone()
-
         pure_images,logits = defense_forward.get_img_logits(_x)
         pred = logits.max(1, keepdim=True)[1]
         for idx in range(x.shape[0]):
             ensemble[idx, pred[idx]] += 1
     pred = ensemble.max(1, keepdim=True)[1]
-    
     return pure_images,pred
 
 
 def test(rank, world_size, args):
+    print(args)
     print('rank {} | world_size {} started'.format(rank, world_size))
 
     model_src = diffusion_model_path[args.dataset]
@@ -87,7 +85,7 @@ def test(rank, world_size, args):
 
     # Load dataset
     assert 512 % args.batch_size == 0
-    testset = load_dataset_by_name(args.dataset, dataset_root, 256)
+    testset = load_dataset_by_name(args.dataset, dataset_root, 512)
     testsampler = torch.utils.data.distributed.DistributedSampler(testset,
                                                                 num_replicas=world_size,
                                                                 rank=rank)
@@ -97,7 +95,19 @@ def test(rank, world_size, args):
                                             pin_memory=True,
                                             sampler=testsampler,
                                             drop_last=False)
+    # Process diffusion hyperparameters
+    def_max_timesteps, def_diffusion_steps = get_diffusion_params(
+        args.def_max_timesteps, args.def_num_denoising_steps)
+    att_max_timesteps, att_diffusion_steps = get_diffusion_params(
+        args.att_max_timesteps, args.att_num_denoising_steps)
 
+    print('def_max_timesteps: ', def_max_timesteps)
+    print('def_diffusion_steps: ', def_diffusion_steps)
+    print('def_sampling_method: ', args.def_sampling_method)
+
+    print('att_max_timesteps: ', att_max_timesteps)
+    print('att_diffusion_steps: ', att_diffusion_steps)
+    print('att_sampling_method: ', args.att_sampling_method)
 
     correct_nat = torch.tensor([0]).to(device)
     correct_adv = torch.tensor([0]).to(device)
@@ -109,10 +119,10 @@ def test(rank, world_size, args):
         clf, diffusion = load_models(args, model_src, device)
 
         # Set diffusion process for attack and defense
-        attack_forward = PurificationForward(clf=clf, diffusion=diffusion,strength=args.strength, is_imagenet=is_imagenet,ddim_steps=args.attack_ddim_steps,
-                                            amplitude_cut_range=args.amplitude_cut_range,phase_cut_range=args.phase_cut_range,delta=args.delta,device=device)
-        defense_forward = PurificationForward(clf=clf, diffusion=diffusion,strength=args.strength, is_imagenet=is_imagenet,ddim_steps=args.defense_ddim_steps,
-                                            amplitude_cut_range=args.amplitude_cut_range,phase_cut_range=args.phase_cut_range,delta=args.delta,device=device)
+        attack_forward = PurificationForward(clf=clf, diffusion=diffusion, is_imagenet=is_imagenet,max_timestep=att_max_timesteps,attack_steps=att_diffusion_steps,
+                                            amplitude_cut_range=args.amplitude_cut_range,phase_cut_range=args.phase_cut_range,delta=args.delta,device=device,sampling_method=args.att_sampling_method)
+        defense_forward = PurificationForward(clf=clf, diffusion=diffusion, is_imagenet=is_imagenet,max_timestep=def_max_timesteps,attack_steps=def_diffusion_steps,
+                                            amplitude_cut_range=args.amplitude_cut_range,phase_cut_range=args.phase_cut_range,delta=args.delta,device=device,sampling_method=args.def_sampling_method)
 
         # Set adversarial attack
         if args.dataset == 'cifar10':
@@ -179,13 +189,17 @@ def test(rank, world_size, args):
 
         with torch.no_grad():
 
+            save(idx,x,'original')
+            save(idx,x_adv,'adv')
+            
+            pure_adv,pred_adv = predict(x_adv, args, defense_forward, num_classes)
+            correct_adv += pred_adv.eq(y.view_as(pred_adv)).sum().item()
+            save_img(idx,pure_adv,pred_adv,y,'adv')
+            print('-'*30)
             pure_nat,pred_nat = predict(x, args, defense_forward, num_classes)
             correct_nat += pred_nat.eq(y.view_as(pred_nat)).sum().item()
 
-
-            pure_adv,pred_adv = predict(x_adv, args, defense_forward, num_classes)
-            correct_adv += pred_adv.eq(y.view_as(pred_adv)).sum().item()
-
+            save_img(idx,pure_nat,pred_nat,y,'nat')
 
         total += x.shape[0]
 
@@ -222,12 +236,25 @@ def parse_args():
     parser.add_argument("--dataset", type=str, default='cifar10',
                         choices=['cifar10', 'imagenet', 'svhn'])
     parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--strength', type=float, default=0.1)
-    parser.add_argument('--amplitude_cut_range', type=int, default=5)
-    parser.add_argument('--phase_cut_range', type=int, default=2)
+    parser.add_argument('--amplitude_cut_range', type=int, default=3)
+    parser.add_argument('--phase_cut_range', type=int, default=3)
     parser.add_argument('--delta', type=float, default=0.3)
-    parser.add_argument('--attack_ddim_steps', type=int, default=10)
-    parser.add_argument('--defense_ddim_steps', type=int, default=200)
+    parser.add_argument('--forward_noise_steps',type=float,default=20)
+    # Purification hyperparameters in defense
+    parser.add_argument("--def_max_timesteps", type=str, default='20,20,20,20,50,50,50,50,100,100',
+                        help='The number of forward steps for each purification step in defense')
+    parser.add_argument('--def_num_denoising_steps', type=str, default='5,5,5,5,10,10,10,10,20,20',
+                        help='The number of denoising steps for each purification step in defense')
+    parser.add_argument('--def_sampling_method', type=str, default='ddpm', choices=['ddpm', 'ddim'],
+                        help='Sampling method for the purification in defense')
+
+    # Purification hyperparameters in attack generation
+    parser.add_argument("--att_max_timesteps", type=str, default='100',
+                        help='The number of forward steps for each purification step in attack')
+    parser.add_argument('--att_num_denoising_steps', type=str,  default='1',
+                        help='The number of denoising steps for each purification step in attack')
+    parser.add_argument('--att_sampling_method', type=str, default='ddpm',
+                        help='Sampling method for the purification in attack')
     # Attack
     parser.add_argument("--attack_method", type=str, default='pgd',
                         choices=['pgd', 'pgd_l2', 'bpda','aa','aa_l2'])
@@ -235,11 +262,8 @@ def parse_args():
                         help='The nubmer of iterations for the attack generation')
     parser.add_argument('--eot', type=int, default=20,
                         help='The number of EOT samples for the attack')
-
-
     parser.add_argument('--num_ensemble_runs', type=int, default=10,
                         help='The number of ensemble runs for purification in defense')
-
 
     args = parser.parse_args()
 
@@ -270,12 +294,12 @@ import os
 class Tee:
     def __init__(self, *file_names):
         self.file_objects = [sys.stdout] 
-        self.file_objects.extend([open(file_name, 'a') for file_name in file_names])
+        self.file_objects.extend([open(file_name, 'a') for file_name in file_names])  
 
     def write(self, message):
         for file_object in self.file_objects:
             file_object.write(message)
-            file_object.flush()  
+            file_object.flush() 
 
     def flush(self):
         for file_object in self.file_objects:
@@ -285,8 +309,6 @@ class Tee:
 
 if __name__ == '__main__':
     log_file = './output_logs.txt'
-    sys.stdout = Tee(log_file) 
-
+    sys.stdout = Tee(log_file)  
     args = parse_args()
-    print(args)  
     init_processes(test, args)
