@@ -1,5 +1,3 @@
-# README
-
 
 
 ## Pretrained Weight
@@ -13,8 +11,6 @@ The classifier weights for WideResNet28-10 (CIFAR10) will be automatically downl
 All datasets should be placed in the path ```./datasets/{}```. CIFAR10 and SVHN will be automatically downloaded by torchvision. For ImageNet, you need to download it manually. Unlike DiffPure, we do not use LMDB.
 
 
-
-
 ## Running Experiments
 
 First, install the required environment:
@@ -25,34 +21,10 @@ pip install -r requirements.txt
 
 ### Example Evaluation
 
-Below is an example of how to run an experiment on CIFAR10 with the WideResNet-28-10 classifier for evaluation using the PGD+EOT $l_{\infty}$ attack:
-
+Below is an example of how to run an experiment on CIFAR10
 ```bash
-CUDA_VISIBLE_DEVICES="0,1,2,3" torchrun --standalone --nnodes=1 --nproc_per_node=1 ddp_test.py\
-    --strength 0.1 \
-    --amplitude_cut_range 3 \
-    --phase_cut_range 2 \
-    --delta 0.2 \
-    --attack_ddim_steps 10\
-    --defense_ddim_steps 500 \
-    --attack_method pgd\
-    --n_iter 200 \
-    --eot 20 \
+sh ./scripts/cifar10.sh
 ```
 
-Below is an example of how to run an experiment on CIFAR10 with the WideResNet-28-10 classifier for evaluation using the PGD+EOT $l_{2}$ attack:
-
-```bash
-CUDA_VISIBLE_DEVICES="0,1,2,3" torchrun --standalone --nnodes=1 --nproc_per_node=1 ddp_test.py\
-    --strength 0.1 \
-    --amplitude_cut_range 3 \
-    --phase_cut_range 2 \
-    --delta 0.2 \
-    --attack_ddim_steps 10\
-    --defense_ddim_steps 500 \
-    --attack_method pgdl2\
-    --n_iter 200 \
-    --eot 20 \
-```
-
-```
+### Visualization
+After evaluation, the original images will be stored in ```./original```, the adversarial images will be stored in ```./adv``` and the purified images will be stored in ```./pure_images```.

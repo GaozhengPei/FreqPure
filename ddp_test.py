@@ -236,20 +236,20 @@ def parse_args():
     parser.add_argument("--dataset", type=str, default='cifar10',
                         choices=['cifar10', 'imagenet', 'svhn'])
     parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--amplitude_cut_range', type=int, default=3)
-    parser.add_argument('--phase_cut_range', type=int, default=3)
+    parser.add_argument('--amplitude_cut_range', type=int, default=10)
+    parser.add_argument('--phase_cut_range', type=int, default=10)
     parser.add_argument('--delta', type=float, default=0.3)
-    parser.add_argument('--forward_noise_steps',type=float,default=20)
+    parser.add_argument('--forward_noise_steps',type=float,default=50)
     # Purification hyperparameters in defense
-    parser.add_argument("--def_max_timesteps", type=str, default='20,20,20,20,50,50,50,50,100,100',
+    parser.add_argument("--def_max_timesteps", type=str, default='1000',
                         help='The number of forward steps for each purification step in defense')
-    parser.add_argument('--def_num_denoising_steps', type=str, default='5,5,5,5,10,10,10,10,20,20',
+    parser.add_argument('--def_num_denoising_steps', type=str, default='100',
                         help='The number of denoising steps for each purification step in defense')
     parser.add_argument('--def_sampling_method', type=str, default='ddpm', choices=['ddpm', 'ddim'],
                         help='Sampling method for the purification in defense')
 
     # Purification hyperparameters in attack generation
-    parser.add_argument("--att_max_timesteps", type=str, default='100',
+    parser.add_argument("--att_max_timesteps", type=str, default='1000',
                         help='The number of forward steps for each purification step in attack')
     parser.add_argument('--att_num_denoising_steps', type=str,  default='1',
                         help='The number of denoising steps for each purification step in attack')
