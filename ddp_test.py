@@ -16,7 +16,7 @@ from attacks.aa_eot_linf import AutoAttackLinf
 from attacks.pgd_eot_bpda import BPDA
 from load_data import load_dataset_by_name
 from load_model import load_models
-from purification_v2 import PurificationForward
+from purification import PurificationForward
 from utils import copy_source
 from path import *
 from PIL import Image
