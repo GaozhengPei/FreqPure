@@ -227,7 +227,6 @@ class PurificationForward(torch.nn.Module):
         if self.is_imagenet:
             x_clf = normalize(diff2clf(F.interpolate(x_diff, size=(
                 224, 224), mode='bilinear', align_corners=False)))
-        else:
-            x_clf = diff2clf(x_diff)
+        x_clf = diff2clf(x_diff)
         logits = self.clf(x_clf)
         return x_clf,logits
